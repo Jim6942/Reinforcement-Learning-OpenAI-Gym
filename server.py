@@ -11,9 +11,14 @@ except ImportError:
 import imageio.v3 as iio
 
 app = FastAPI()
+
+ALLOWED_ORIGINS = [
+    "https://ailunarlander.netlify.app",
+    "http://localhost:5173",
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
