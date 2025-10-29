@@ -1,2 +1,0 @@
-model_checkpoint_path: "Mountain_Car_weights.h5f"
-all_model_checkpoint_paths: "Mountain_Car_weights.h5f"

@@ -1,1 +1,0 @@
-To run the agents, copy the repository and run the main file. You do not need to train the agents again as the trained weights are already saved in a file. They can be copied and loaded to use in your own agent.

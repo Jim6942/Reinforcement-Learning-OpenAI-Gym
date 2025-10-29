@@ -1,2 +1,0 @@
-model_checkpoint_path: "Acrobot_weights.h5f"
-all_model_checkpoint_paths: "Acrobot_weights.h5f"

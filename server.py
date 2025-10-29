@@ -1,4 +1,3 @@
-# server.py
 import base64, io, os, uuid, math
 from typing import Dict, Optional
 import numpy as np
@@ -25,6 +24,7 @@ class NewReq(BaseModel):
     angle_deg: Optional[float] = None
     x_threshold: Optional[float] = None
     max_steps: Optional[int] = None
+    seed: Optional[int] = None
 
 class SidReq(BaseModel):
     session_id: str
@@ -54,8 +54,9 @@ def load_agent_for(env_id: str):
     return None
 
 class Session:
-    def __init__(self, env_id: str, angle_deg: Optional[float], x_threshold: Optional[float], max_steps: Optional[int]):
+    def __init__(self, env_id: str, angle_deg: Optional[float], x_threshold: Optional[float], max_steps: Optional[int], seed: Optional[int]):
         self.env_id = env_id
+        self.seed = seed
         make_kwargs = {"render_mode": "rgb_array"}
         if max_steps is not None:
             make_kwargs["max_episode_steps"] = int(max_steps)
@@ -65,7 +66,7 @@ class Session:
             unwrapped.theta_threshold_radians = float(angle_deg) * math.pi / 180.0
         if x_threshold is not None and hasattr(unwrapped, "x_threshold"):
             unwrapped.x_threshold = float(x_threshold)
-        self.obs, _ = self.env.reset()
+        self.obs, _ = self.env.reset(seed=seed)
         self.done = False
         self.agent = load_agent_for(env_id)
 
@@ -92,14 +93,14 @@ def health():
 @app.post("/session/new")
 def new(req: NewReq):
     sid = str(uuid.uuid4())
-    SESS[sid] = Session(req.env_id, req.angle_deg, req.x_threshold, req.max_steps)
+    SESS[sid] = Session(req.env_id, req.angle_deg, req.x_threshold, req.max_steps, req.seed)
     s = SESS[sid]
     return {"session_id": sid, "obs": s.obs.tolist(), "frame": s.frame(), "done": s.done}
 
 @app.post("/reset")
 def reset(req: SidReq):
     s = need(req.session_id)
-    s.obs, _ = s.env.reset()
+    s.obs, _ = s.env.reset(seed=s.seed)
     s.done = False
     return {"obs": s.obs.tolist(), "frame": s.frame(), "done": s.done}
 

@@ -1,4 +1,3 @@
-// src/App.tsx
 import { useEffect, useRef, useState } from "react";
 import axios from "axios";
 
@@ -23,16 +22,14 @@ type StepResp = {
 
 export default function App() {
   const [mode, setMode] = useState<Mode>("human");
-  const [status, setStatus] = useState("Booting…");
+  const [status, setStatus] = useState<string>("Booting…");
 
-  // single-session state (human OR agent)
   const [sid, setSid] = useState<string | null>(null);
   const [img, setImg] = useState<string | null>(null);
   const [over, setOver] = useState<boolean>(false);
   const [reward, setReward] = useState<number>(0);
   const [episodeReward, setEpisodeReward] = useState<number>(0);
 
-  // duel state
   const [sidH, setSidH] = useState<string | null>(null);
   const [sidA, setSidA] = useState<string | null>(null);
   const [imgH, setImgH] = useState<string | null>(null);
@@ -53,7 +50,6 @@ export default function App() {
     headers: { "Content-Type": "application/json" },
   });
 
-  // keyboard
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       keys.current[e.key] = e.type === "keydown";
@@ -66,11 +62,10 @@ export default function App() {
     };
   }, []);
 
-  // boot a single session (default page load)
   useEffect(() => {
-    const boot = async () => {
-      setStatus("Creating session…");
+    const init = async () => {
       try {
+        setStatus("Creating session…");
         const { data } = await http.post<NewSessionResp>("/session/new", {
           env_id: "LunarLander-v3",
         });
@@ -86,8 +81,7 @@ export default function App() {
         setStatus(`Init failed: ${e?.response?.data?.detail ?? e?.message ?? "unknown"}`);
       }
     };
-    void boot();
-
+    void init();
   }, []);
 
   useEffect(() => {
@@ -109,8 +103,6 @@ export default function App() {
             raf.current = requestAnimationFrame(tick);
             return;
           }
-
-          // derive human action from keys (A/W/D)
           const A = !!keys.current["a"] || !!keys.current["A"];
           const W = !!keys.current["w"] || !!keys.current["W"];
           const D = !!keys.current["d"] || !!keys.current["D"];
@@ -119,19 +111,11 @@ export default function App() {
           else if (A && !D) lastAction.current = 1;
           else lastAction.current = 0;
 
-          // step both sides in parallel where not done
           const reqs: Promise<any>[] = [];
-          if (!overH) {
-            reqs.push(
-              http.post<StepResp>("/step", { session_id: sidH, action: lastAction.current })
-            );
-          }
-          if (!overA) {
-            reqs.push(http.post<StepResp>("/agent_step", { session_id: sidA }));
-          }
+          if (!overH) reqs.push(http.post<StepResp>("/step", { session_id: sidH, action: lastAction.current }));
+          if (!overA) reqs.push(http.post<StepResp>("/agent_step", { session_id: sidA }));
           const results = await Promise.all(reqs);
 
-          // map back
           let i = 0;
           if (!overH) {
             const { data } = results[i++] as { data: StepResp };
@@ -145,20 +129,12 @@ export default function App() {
             if (typeof data.reward === "number") setEpRA((r) => r + data.reward!);
             if (data.done) setOverA(true);
           }
-
-          // show status when both done
-          if (!overH || !overA) {
-            setStatus("Duel running…");
-          } else {
-            setStatus("Duel finished");
-          }
+          setStatus(overH && overA ? "Duel finished" : "Duel running…");
         } else {
-          // single-session
           if (!sid || over) {
             raf.current = requestAnimationFrame(tick);
             return;
           }
-
           let resp: StepResp | undefined;
           if (mode === "human") {
             const A = !!keys.current["a"] || !!keys.current["A"];
@@ -168,22 +144,17 @@ export default function App() {
             else if (D && !A) lastAction.current = 3;
             else if (A && !D) lastAction.current = 1;
             else lastAction.current = 0;
-
-            const { data } = await http.post<StepResp>("/step", {
-              session_id: sid,
-              action: lastAction.current,
-            });
+            const { data } = await http.post<StepResp>("/step", { session_id: sid, action: lastAction.current });
             resp = data;
           } else {
             const { data } = await http.post<StepResp>("/agent_step", { session_id: sid });
             resp = data;
           }
-
           if (resp) {
             setImg(resp.frame);
             if (typeof resp.reward === "number") {
               setReward(resp.reward);
-              setEpisodeReward((r) => r + resp!.reward!);
+              setEpisodeReward((er) => er + resp.reward!);
             }
             if (resp.done) {
               setOver(true);
@@ -208,13 +179,10 @@ export default function App() {
     };
   }, [mode, sid, over, sidH, sidA, overH, overA]);
 
-  // actions
   const restartSingle = async () => {
     if (!sid) return;
     setStatus("Resetting…");
-    const { data } = await http.post<{ frame: string; done: boolean }>("/reset", {
-      session_id: sid,
-    });
+    const { data } = await http.post<{ frame: string; done: boolean }>("/reset", { session_id: sid });
     setImg(data.frame);
     setOver(false);
     setReward(0);
@@ -228,11 +196,8 @@ export default function App() {
     setImgH(null); setImgA(null);
     setOverH(false); setOverA(false);
     setEpRH(0); setEpRA(0);
-
-    // one shared seed for same terrain
     const seed = Math.floor(Math.random() * 1e9);
     setDuelSeed(seed);
-
     const [h, a] = await Promise.all([
       http.post<NewSessionResp>("/session/new", { env_id: "LunarLander-v3", seed }),
       http.post<NewSessionResp>("/session/new", { env_id: "LunarLander-v3", seed }),
@@ -248,7 +213,6 @@ export default function App() {
     setStatus("Resetting duel…");
     const seed = Math.floor(Math.random() * 1e9);
     setDuelSeed(seed);
-
     const [h, a] = await Promise.all([
       http.post<NewSessionResp>("/session/new", { env_id: "LunarLander-v3", seed }),
       http.post<NewSessionResp>("/session/new", { env_id: "LunarLander-v3", seed }),
@@ -258,12 +222,11 @@ export default function App() {
     setStatus("Duel ready");
   };
 
-  // winner banner
   const duelOver = mode === "duel" && overH && overA;
   let winnerText = "";
   if (duelOver) {
     if (Math.abs(epRH - epRA) < 1e-6) winnerText = "Tie!";
-    else winnerText = epRH > epRA ? "Winner: Human 🎉" : "Winner: Agent 🤖";
+    else winnerText = epRH > epRA ? "Winner: Human" : "Winner: Agent";
   }
 
   const Score = ({ label, value }: { label: string; value: number }) => (
@@ -280,9 +243,7 @@ export default function App() {
         <button disabled={mode === "human"} onClick={() => setMode("human")}>Human</button>
         <button disabled={mode === "agent"} onClick={() => setMode("agent")}>Agent</button>
         <button onClick={restartSingle} disabled={mode === "duel"}>Restart</button>
-
         <span style={{ marginLeft: 8, opacity: 0.85 }}>Status: <strong>{status}</strong></span>
-
         <span style={{ marginLeft: "auto" }}>
           <button onClick={startDuel} disabled={mode === "duel"}>Start Duel</button>
           <button onClick={restartDuel} disabled={mode !== "duel"} style={{ marginLeft: 8 }}>Restart Duel</button>
@@ -303,7 +264,12 @@ export default function App() {
             }}
           >
             {img ? (
-              <img src={`data:image/png;base64,${img}`} width={800} height={600} alt="Gym render" />
+              <img
+                src={`data:image/png;base64,${img}`}
+                width={800}
+                height={600}
+                alt="Gym render"
+              />
             ) : (
               <span>Loading…</span>
             )}
@@ -318,7 +284,6 @@ export default function App() {
         </>
       ) : (
         <>
-          {/* Duel layout */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <div>
               <div style={{ marginBottom: 6, opacity: 0.8 }}>Human</div>
@@ -355,7 +320,13 @@ export default function App() {
                 }}
               >
                 {imgA ? (
-                  <img src={`data:image/png;base64,${imgA}`} width={520} height={390} alt="Agent render" />
+                  <img
+                    src={`data:image/png;base64,${imgA}`}
+                    width={520}
+                    height={390}
+                    alt="Agent render"
+                    style={{ filter: "hue-rotate(140deg) saturate(1.2)" }}
+                  />
                 ) : (
                   <span>Loading…</span>
                 )}

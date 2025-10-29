@@ -1,0 +1,13 @@
+﻿.venv*/
+__pycache__/
+*.pyc
+.vscode/
+.DS_Store
+
+# frontend
+site/node_modules/
+site/dist/
+site/.env*
+# training artifacts
+agents/**/ckpt_*.zip
+agents/**/last_model.zip
