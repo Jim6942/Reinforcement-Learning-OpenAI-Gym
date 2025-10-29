@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import axios from "axios";
 
-const API = "/api";
+const API = import.meta.env.VITE_API_BASE ?? "/api";
 
 type Mode = "human" | "agent" | "duel";
 
@@ -252,27 +252,8 @@ export default function App() {
 
       {mode !== "duel" ? (
         <>
-          <div
-            style={{
-              width: 800,
-              height: 600,
-              border: "1px solid #444",
-              display: "grid",
-              placeItems: "center",
-              background: "#000",
-              borderRadius: 8,
-            }}
-          >
-            {img ? (
-              <img
-                src={`data:image/png;base64,${img}`}
-                width={800}
-                height={600}
-                alt="Gym render"
-              />
-            ) : (
-              <span>Loading…</span>
-            )}
+          <div style={{ width: 800, height: 600, border: "1px solid #444", display: "grid", placeItems: "center", background: "#000", borderRadius: 8 }}>
+            {img ? <img src={`data:image/png;base64,${img}`} width={800} height={600} alt="Gym render" /> : <span>Loading…</span>}
           </div>
 
           <div style={{ display: "flex", gap: 16, marginTop: 8 }}>
@@ -287,49 +268,14 @@ export default function App() {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <div>
               <div style={{ marginBottom: 6, opacity: 0.8 }}>Human</div>
-              <div
-                style={{
-                  width: 520,
-                  height: 390,
-                  border: "1px solid #444",
-                  display: "grid",
-                  placeItems: "center",
-                  background: "#000",
-                  borderRadius: 8,
-                }}
-              >
-                {imgH ? (
-                  <img src={`data:image/png;base64,${imgH}`} width={520} height={390} alt="Human render" />
-                ) : (
-                  <span>Loading…</span>
-                )}
+              <div style={{ width: 520, height: 390, border: "1px solid #444", display: "grid", placeItems: "center", background: "#000", borderRadius: 8 }}>
+                {imgH ? <img src={`data:image/png;base64,${imgH}`} width={520} height={390} alt="Human render" /> : <span>Loading…</span>}
               </div>
             </div>
-
             <div>
               <div style={{ marginBottom: 6, opacity: 0.8 }}>Agent</div>
-              <div
-                style={{
-                  width: 520,
-                  height: 390,
-                  border: "1px solid #444",
-                  display: "grid",
-                  placeItems: "center",
-                  background: "#000",
-                  borderRadius: 8,
-                }}
-              >
-                {imgA ? (
-                  <img
-                    src={`data:image/png;base64,${imgA}`}
-                    width={520}
-                    height={390}
-                    alt="Agent render"
-                    style={{ filter: "hue-rotate(140deg) saturate(1.2)" }}
-                  />
-                ) : (
-                  <span>Loading…</span>
-                )}
+              <div style={{ width: 520, height: 390, border: "1px solid #444", display: "grid", placeItems: "center", background: "#000", borderRadius: 8 }}>
+                {imgA ? <img src={`data:image/png;base64,${imgA}`} width={520} height={390} alt="Agent render" style={{ filter: "hue-rotate(140deg) saturate(1.2)" }} /> : <span>Loading…</span>}
               </div>
             </div>
           </div>
