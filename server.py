@@ -8,7 +8,7 @@ try:
     import gymnasium as gym
 except ImportError:
     import gym
-import imageio.v3 as iio
+from PIL import Image
 
 app = FastAPI()
 
@@ -30,14 +30,17 @@ class NewReq(BaseModel):
     x_threshold: Optional[float] = None
     max_steps: Optional[int] = None
     seed: Optional[int] = None
+    render_w: Optional[int] = None
+    render_h: Optional[int] = None
 
 class SidReq(BaseModel):
     session_id: str
+    repeat: Optional[int] = 1
 
 class StepReq(SidReq):
     action: int
 
-def load_agent_for(env_id: str):
+def load_agent(env_id: str):
     try:
         from stable_baselines3 import PPO, DQN
     except Exception:
@@ -59,13 +62,15 @@ def load_agent_for(env_id: str):
     return None
 
 class Session:
-    def __init__(self, env_id: str, angle_deg: Optional[float], x_threshold: Optional[float], max_steps: Optional[int], seed: Optional[int]):
+    def __init__(self, env_id: str, angle_deg: Optional[float], x_threshold: Optional[float], max_steps: Optional[int], seed: Optional[int], w: Optional[int], h: Optional[int]):
         self.env_id = env_id
         self.seed = seed
-        make_kwargs = {"render_mode": "rgb_array"}
+        self.rw = int(w) if w else 400
+        self.rh = int(h) if h else 300
+        kwargs = {"render_mode": "rgb_array"}
         if max_steps is not None:
-            make_kwargs["max_episode_steps"] = int(max_steps)
-        self.env = gym.make(env_id, **make_kwargs)
+            kwargs["max_episode_steps"] = int(max_steps)
+        self.env = gym.make(env_id, **kwargs)
         unwrapped = self.env.unwrapped
         if angle_deg is not None and hasattr(unwrapped, "theta_threshold_radians"):
             unwrapped.theta_threshold_radians = float(angle_deg) * math.pi / 180.0
@@ -73,19 +78,21 @@ class Session:
             unwrapped.x_threshold = float(x_threshold)
         self.obs, _ = self.env.reset(seed=seed)
         self.done = False
-        self.agent = load_agent_for(env_id)
+        self.agent = load_agent(env_id)
 
     def frame(self) -> str:
         arr = self.env.render()
         if arr is None:
-            arr = np.zeros((400, 600, 3), dtype=np.uint8)
+            arr = np.zeros((self.rh, self.rw, 3), dtype=np.uint8)
+        im = Image.fromarray(arr)
+        im = im.resize((self.rw, self.rh))
         buf = io.BytesIO()
-        iio.imwrite(buf, arr, extension=".png")
+        im.save(buf, format="WEBP", quality=60, method=3)
         return base64.b64encode(buf.getvalue()).decode("ascii")
 
 SESS: Dict[str, Session] = {}
 
-def need(sid: str) -> Session:
+def get_session(sid: str) -> Session:
     s = SESS.get(sid)
     if not s:
         raise HTTPException(404, "session not found")
@@ -98,41 +105,59 @@ def health():
 @app.post("/session/new")
 def new(req: NewReq):
     sid = str(uuid.uuid4())
-    SESS[sid] = Session(req.env_id, req.angle_deg, req.x_threshold, req.max_steps, req.seed)
+    SESS[sid] = Session(req.env_id, req.angle_deg, req.x_threshold, req.max_steps, req.seed, req.render_w, req.render_h)
     s = SESS[sid]
     return {"session_id": sid, "obs": s.obs.tolist(), "frame": s.frame(), "done": s.done}
 
 @app.post("/reset")
 def reset(req: SidReq):
-    s = need(req.session_id)
+    s = get_session(req.session_id)
     s.obs, _ = s.env.reset(seed=s.seed)
     s.done = False
     return {"obs": s.obs.tolist(), "frame": s.frame(), "done": s.done}
 
 @app.post("/step")
 def step(req: StepReq):
-    s = need(req.session_id)
+    s = get_session(req.session_id)
+    repeat = int(req.repeat or 1)
+    if repeat < 1:
+        repeat = 1
+    total_rew = 0.0
     if s.done:
-        return {"obs": s.obs.tolist(), "reward": 0.0, "done": True, "frame": s.frame()}
-    step_out = s.env.step(int(req.action))
-    if len(step_out) == 5:
-        obs, rew, term, trunc, _ = step_out
-        done = bool(term or trunc)
-    else:
-        obs, rew, done, _ = step_out
-    s.obs = obs
-    s.done = done
-    return {"obs": s.obs.tolist(), "reward": float(rew), "done": s.done, "frame": s.frame()}
+        return {"obs": s.obs.tolist(), "reward": 0.0, "done": True, "frame": s.frame(), "steps": 0}
+    for i in range(repeat):
+        out = s.env.step(int(req.action))
+        if len(out) == 5:
+            obs, rew, term, trunc, _ = out
+            done = bool(term or trunc)
+        else:
+            obs, rew, done, _ = out
+        s.obs = obs
+        total_rew += float(rew)
+        s.done = done
+        if s.done:
+            break
+    return {"obs": s.obs.tolist(), "reward": total_rew, "done": s.done, "frame": s.frame(), "steps": i + 1}
 
 @app.post("/agent_step")
 def agent_step(req: SidReq):
-    s = need(req.session_id)
+    s = get_session(req.session_id)
     if s.agent is None:
         raise HTTPException(400, "No agent loaded for this env.")
+    repeat = int(req.repeat or 1)
+    if repeat < 1:
+        repeat = 1
+    total_rew = 0.0
+    last_action = 0
     if s.done:
-        return {"obs": s.obs.tolist(), "reward": 0.0, "done": True, "frame": s.frame()}
-    action, _ = s.agent.predict(s.obs, deterministic=True)
-    obs, rew, term, trunc, _ = s.env.step(int(action))
-    s.obs = obs
-    s.done = bool(term or trunc)
-    return {"obs": s.obs.tolist(), "reward": float(rew), "done": s.done, "frame": s.frame(), "action": int(action)}
+        return {"obs": s.obs.tolist(), "reward": 0.0, "done": True, "frame": s.frame(), "steps": 0}
+    for i in range(repeat):
+        action, _ = s.agent.predict(s.obs, deterministic=True)
+        last_action = int(action)
+        obs, rew, term, trunc, _ = s.env.step(last_action)
+        s.obs = obs
+        total_rew += float(rew)
+        s.done = bool(term or trunc)
+        if s.done:
+            break
+    return {"obs": s.obs.tolist(), "reward": total_rew, "done": s.done, "frame": s.frame(), "action": last_action, "steps": i + 1}
