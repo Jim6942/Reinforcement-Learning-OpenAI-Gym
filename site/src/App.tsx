@@ -61,6 +61,8 @@ export default function App() {
   const [fps, setFps] = useState(0);
   const [latencyMs, setLatencyMs] = useState(0);
 
+  const [autoAgentDemo, setAutoAgentDemo] = useState(false);
+
   const keys = useKeys();
   const lastAction = useRef(0);
   const running = useRef(true);
@@ -141,7 +143,7 @@ export default function App() {
     singleLoopBusy.current = true;
     let cancel = false;
     const loop = async () => {
-      while (running.current && !cancel && sid && !done) {
+      while (running.current && !cancel && sid && !done && mode !== "duel") {
         try {
           const t0 = performance.now();
           const repeat = repeatRef.current;
@@ -165,9 +167,30 @@ export default function App() {
             setEpR((x) => x + resp.reward!);
           }
           if (resp.done) {
-            setDone(true);
-            setStatus("Episode finished");
-            break;
+            if (mode === "agent" && autoAgentDemo && sid) {
+              try {
+                setStatus("Agent demo: resetting…");
+                const { data: resetData } = await http.post<{ frame: string; done: boolean }>("/reset", {
+                  session_id: sid,
+                });
+                setImg(resetData.frame);
+                setDone(false);
+                setStepR(0);
+                setEpR(0);
+                lastAction.current = 0;
+                repeatRef.current = 1;
+                setStatus("Agent demo: running…");
+                continue;
+              } catch (err: any) {
+                setDone(true);
+                setStatus(err?.message ?? "Auto reset failed");
+                break;
+              }
+            } else {
+              setDone(true);
+              setStatus("Episode finished");
+              break;
+            }
           } else {
             setStatus("Running…");
           }
@@ -204,7 +227,7 @@ export default function App() {
       cancel = true;
       singleLoopBusy.current = false;
     };
-  }, [mode, sid, done]);
+  }, [mode, sid, done, autoAgentDemo]);
 
   useEffect(() => {
     if (mode !== "duel") return;
@@ -341,14 +364,38 @@ export default function App() {
 
       <div className="toolbar">
         <div className="left">
-          <button className="btn" disabled={mode === "human"} onClick={() => setMode("human")}>Human</button>
-          <button className="btn" disabled={mode === "agent"} onClick={() => setMode("agent")}>Agent</button>
-          <button className="btn" onClick={restartSingle} disabled={mode === "duel"}>Restart</button>
+          <button className="btn" disabled={mode === "human"} onClick={() => setMode("human")}>
+            Human
+          </button>
+          <button className="btn" disabled={mode === "agent"} onClick={() => setMode("agent")}>
+            Agent
+          </button>
+          <button className="btn" onClick={restartSingle} disabled={mode === "duel"}>
+            Restart
+          </button>
         </div>
-        <div className="status">Status: <strong>{status}</strong></div>
+        <div className="status">
+          Status: <strong>{status}</strong>
+        </div>
         <div className="right">
-          <button className="btn" onClick={startDuel} disabled={mode === "duel"}>Start Duel</button>
-          <button className="btn" onClick={restartDuel} disabled={mode !== "duel"}>Restart Duel</button>
+          <button
+            className="btn"
+            disabled={mode === "duel"}
+            onClick={() => {
+              if (!autoAgentDemo) {
+                setMode("agent");
+              }
+              setAutoAgentDemo((v) => !v);
+            }}
+          >
+            {autoAgentDemo ? "Stop Agent Demo" : "Run Agent Demo"}
+          </button>
+          <button className="btn" onClick={startDuel} disabled={mode === "duel"}>
+            Start Duel
+          </button>
+          <button className="btn" onClick={restartDuel} disabled={mode !== "duel"}>
+            Restart Duel
+          </button>
         </div>
       </div>
 
@@ -357,7 +404,11 @@ export default function App() {
           {mode !== "duel" ? (
             <>
               <div className={`frame ${mode}`}>
-                {img ? <img src={`data:image/webp;base64,${img}`} width={800} height={600} /> : <div className="loading">Loading…</div>}
+                {img ? (
+                  <img src={`data:image/webp;base64,${img}`} width={800} height={600} />
+                ) : (
+                  <div className="loading">Loading…</div>
+                )}
                 <div className={`corner ${mode}`}>{mode === "human" ? "Human" : "Agent"}</div>
               </div>
               <div className="row">
@@ -370,12 +421,20 @@ export default function App() {
             <>
               <div className="duel">
                 <div className="frame human">
-                  {imgH ? <img src={`data:image/webp;base64,${imgH}`} width={520} height={390} /> : <div className="loading small">Loading…</div>}
+                  {imgH ? (
+                    <img src={`data:image/webp;base64,${imgH}`} width={520} height={390} />
+                  ) : (
+                    <div className="loading small">Loading…</div>
+                  )}
                   <div className="corner human">Human</div>
                   {duelOver && winner === "Human" && <div className="ribbon human">Winner: Human</div>}
                 </div>
                 <div className="frame agent">
-                  {imgA ? <img src={`data:image/webp;base64,${imgA}`} width={520} height={390} /> : <div className="loading small">Loading…</div>}
+                  {imgA ? (
+                    <img src={`data:image/webp;base64,${imgA}`} width={520} height={390} />
+                  ) : (
+                    <div className="loading small">Loading…</div>
+                  )}
                   <div className="corner agent">Agent</div>
                   {duelOver && winner === "Agent" && <div className="ribbon agent">Winner: Agent</div>}
                 </div>
@@ -418,17 +477,35 @@ export default function App() {
           {mode !== "duel" ? (
             <div className="panel">
               <div className="panel-title">Session</div>
-              <div className="kv"><span>Episode</span><b>{epR.toFixed(2)}</b></div>
-              <div className="kv"><span>Last step</span><b>{stepR.toFixed(2)}</b></div>
-              <div className="kv"><span>Session</span><b>{sid?.slice(0, 8) ?? "-"}</b></div>
+              <div className="kv">
+                <span>Episode</span>
+                <b>{epR.toFixed(2)}</b>
+              </div>
+              <div className="kv">
+                <span>Last step</span>
+                <b>{stepR.toFixed(2)}</b>
+              </div>
+              <div className="kv">
+                <span>Session</span>
+                <b>{sid?.slice(0, 8) ?? "-"}</b>
+              </div>
               <div className="help">Controls: A=left, W=main, D=right</div>
             </div>
           ) : (
             <div className="panel">
               <div className="panel-title">Duel</div>
-              <div className="kv"><span>Human</span><b>{epRH.toFixed(2)}</b></div>
-              <div className="kv"><span>Agent</span><b>{epRA.toFixed(2)}</b></div>
-              <div className="kv"><span>Seed</span><b>{duelSeed ?? "-"}</b></div>
+              <div className="kv">
+                <span>Human</span>
+                <b>{epRH.toFixed(2)}</b>
+              </div>
+              <div className="kv">
+                <span>Agent</span>
+                <b>{epRA.toFixed(2)}</b>
+              </div>
+              <div className="kv">
+                <span>Seed</span>
+                <b>{duelSeed ?? "-"}</b>
+              </div>
               <div className="help">Controls: A=left, W=main, D=right</div>
             </div>
           )}
