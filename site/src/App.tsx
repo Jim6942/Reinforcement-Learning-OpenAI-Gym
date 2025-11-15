@@ -147,7 +147,8 @@ export default function App() {
     singleLoopBusy.current = true;
     let cancel = false;
     const loop = async () => {
-      while (running.current && !cancel && sid && !done && mode !== "duel") {
+      // removed mode check here – TS error was because mode is already narrowed
+      while (running.current && !cancel && sid && !done) {
         try {
           const t0 = performance.now();
           const repeat = 2;
@@ -255,7 +256,8 @@ export default function App() {
     duelLoopBusy.current = true;
     let cancel = false;
     const loop = async () => {
-      while (running.current && !cancel && mode === "duel" && sidH && sidA && !(doneH && doneA)) {
+      // same idea: no need to check mode again in the while
+      while (running.current && !cancel && sidH && sidA && !(doneH && doneA)) {
         try {
           const t0 = performance.now();
           const repeat = 1;
