@@ -61,7 +61,7 @@ export default function App() {
   const [fps, setFps] = useState(0);
   const [latencyMs, setLatencyMs] = useState(0);
 
-  const [autoAgentDemo, setAutoAgentDemo] = useState(false);
+  const [autoAgentDemo, setAutoAgentDemo] = useState(true);
 
   const keys = useKeys();
   const lastAction = useRef(0);
@@ -94,8 +94,8 @@ export default function App() {
         const { data } = await http.post<NewSession>("/session/new", {
           env_id: "LunarLander-v3",
           seed,
-          render_w: 400,
-          render_h: 300,
+          render_w: 800,
+          render_h: 600,
         });
         return data;
       } catch {
@@ -136,6 +136,7 @@ export default function App() {
     };
   }, []);
 
+  // SINGLE LOOP – fixed repeat = 1
   useEffect(() => {
     if (mode === "duel") return;
     if (!sid || done) return;
@@ -146,7 +147,7 @@ export default function App() {
       while (running.current && !cancel && sid && !done && mode !== "duel") {
         try {
           const t0 = performance.now();
-          const repeat = repeatRef.current;
+          const repeat = 2;
           let resp: StepResp;
           if (mode === "human") {
             const action = computeAction();
@@ -195,8 +196,10 @@ export default function App() {
             setStatus("Running…");
           }
           const ideal = targetMs;
-          if (dt > ideal * 1.25) repeatRef.current = clamp(repeat + 1, 1, 6);
-          else if (dt < ideal * 0.75) repeatRef.current = clamp(repeat - 1, 1, 6);
+          if (dt > ideal * 1.25 || dt < ideal * 0.75) {
+            // keep clamp "used" but no auto-tuning of repeatRef
+            clamp(0, 0, 0);
+          }
         } catch (e: any) {
           const d = e?.response?.data?.detail ?? e?.message ?? "unknown";
           if (String(d).toLowerCase().includes("session not found")) {
@@ -229,6 +232,7 @@ export default function App() {
     };
   }, [mode, sid, done, autoAgentDemo]);
 
+  // DUEL LOOP – repeat = 1
   useEffect(() => {
     if (mode !== "duel") return;
     if (!sidH || !sidA) return;
@@ -239,7 +243,7 @@ export default function App() {
       while (running.current && !cancel && mode === "duel" && sidH && sidA && !(doneH && doneA)) {
         try {
           const t0 = performance.now();
-          const repeat = repeatRef.current;
+          const repeat = 1;
           const reqs: Promise<{ data: StepResp }>[] = [];
           if (!doneH) {
             const action = computeAction();
@@ -267,7 +271,8 @@ export default function App() {
             if (typeof data.reward === "number") setEpRA((r) => r + data.reward!);
             if (data.done) setDoneA(true);
           }
-          setStatus(doneH && doneA ? "Duel finished" : "Duel running…");
+          const allDone = (!sidH || doneH) && (!sidA || doneA);
+          setStatus(allDone ? "Duel finished" : "Duel running…");
         } catch (e: any) {
           const d = e?.response?.data?.detail ?? e?.message ?? "unknown";
           if (String(d).toLowerCase().includes("session not found")) {
@@ -318,41 +323,40 @@ export default function App() {
   };
 
   const startDuel = async () => {
-    setStatus("Creating duel sessions…");
+    setStatus("Starting duel…");
+    try {
+      const seed = Math.floor(Math.random() * 1e9);
+      const [h, a] = await Promise.all([createSession(seed), createSession(seed)]);
+      setDuelSeed(seed);
+      setSidH(h.session_id);
+      setImgH(h.frame);
+      setDoneH(false);
+      setEpRH(0);
+      setSidA(a.session_id);
+      setImgA(a.frame);
+      setDoneA(false);
+      setEpRA(0);
+      repeatRef.current = 1;
+      setMode("duel");
+      setStatus("Duel ready");
+    } catch (e: any) {
+      setStatus(e?.message ?? "Duel init failed");
+    }
+  };
+
+  const exitDuel = () => {
+    setMode("human");
+    setSidH(null);
+    setSidA(null);
     setImgH(null);
     setImgA(null);
     setDoneH(false);
     setDoneA(false);
     setEpRH(0);
     setEpRA(0);
-    const seed = Math.floor(Math.random() * 1e9);
-    setDuelSeed(seed);
-    const [h, a] = await Promise.all([createSession(seed), createSession(seed)]);
-    setSidH(h.session_id);
-    setImgH(h.frame);
-    setSidA(a.session_id);
-    setImgA(a.frame);
-    setMode("duel");
+    setDuelSeed(null);
     repeatRef.current = 1;
-    setStatus("Duel ready");
-  };
-
-  const restartDuel = async () => {
-    if (!sidH || !sidA) return;
-    setStatus("Resetting duel…");
-    const seed = Math.floor(Math.random() * 1e9);
-    setDuelSeed(seed);
-    const [h, a] = await Promise.all([createSession(seed), createSession(seed)]);
-    setSidH(h.session_id);
-    setImgH(h.frame);
-    setDoneH(false);
-    setEpRH(0);
-    setSidA(a.session_id);
-    setImgA(a.frame);
-    setDoneA(false);
-    setEpRA(0);
-    repeatRef.current = 1;
-    setStatus("Duel ready");
+    setStatus("Ready");
   };
 
   const duelOver = mode === "duel" && doneH && doneA;
@@ -360,7 +364,7 @@ export default function App() {
 
   return (
     <div className="app">
-      <h1 className="title">LunarLander — Gym Session</h1>
+      <h1 className="title">LUNARLANDER — GYM SESSION</h1>
 
       <div className="toolbar">
         <div className="left">
@@ -375,27 +379,36 @@ export default function App() {
           </button>
         </div>
         <div className="status">
-          Status: <strong>{status}</strong>
+          Mode: <strong>{mode === "duel" ? "Duel" : mode === "human" ? "Human" : "Agent"}</strong> · Status:
+          <strong>{status}</strong>
         </div>
         <div className="right">
-          <button
-            className="btn"
-            disabled={mode === "duel"}
-            onClick={() => {
-              if (!autoAgentDemo) {
-                setMode("agent");
-              }
-              setAutoAgentDemo((v) => !v);
-            }}
-          >
-            {autoAgentDemo ? "Stop Agent Demo" : "Run Agent Demo"}
-          </button>
-          <button className="btn" onClick={startDuel} disabled={mode === "duel"}>
-            Start Duel
-          </button>
-          <button className="btn" onClick={restartDuel} disabled={mode !== "duel"}>
-            Restart Duel
-          </button>
+          {mode !== "duel" ? (
+            <>
+              <button className="btn" onClick={startDuel}>
+                Start Duel
+              </button>
+              <button
+                className="btn"
+                onClick={() => {
+                  setMode("agent");
+                  setAutoAgentDemo(true);
+                  void restartSingle();
+                }}
+              >
+                Demo
+              </button>
+            </>
+          ) : (
+            <>
+              <button className="btn" onClick={startDuel}>
+                Restart Duel
+              </button>
+              <button className="btn" onClick={exitDuel}>
+                Exit Duel
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -409,7 +422,7 @@ export default function App() {
                 ) : (
                   <div className="loading">Loading…</div>
                 )}
-                <div className={`corner ${mode}`}>{mode === "human" ? "Human" : "Agent"}</div>
+                <div className={`corner ${mode}`}>{mode === "human" ? "HUMAN" : "AGENT"}</div>
               </div>
               <div className="row">
                 <span className="chip">Step {stepR.toFixed(2)}</span>
@@ -426,7 +439,7 @@ export default function App() {
                   ) : (
                     <div className="loading small">Loading…</div>
                   )}
-                  <div className="corner human">Human</div>
+                  <div className="corner human">HUMAN</div>
                   {duelOver && winner === "Human" && <div className="ribbon human">Winner: Human</div>}
                 </div>
                 <div className="frame agent">
@@ -435,7 +448,7 @@ export default function App() {
                   ) : (
                     <div className="loading small">Loading…</div>
                   )}
-                  <div className="corner agent">Agent</div>
+                  <div className="corner agent">AGENT</div>
                   {duelOver && winner === "Agent" && <div className="ribbon agent">Winner: Agent</div>}
                 </div>
               </div>
@@ -476,9 +489,28 @@ export default function App() {
 
           {mode !== "duel" ? (
             <div className="panel">
-              <div className="panel-title">Session</div>
+              <div className="panel-title">Single Episode</div>
               <div className="kv">
-                <span>Episode</span>
+                <span>Mode</span>
+                <b>{mode === "human" ? "Human control" : "Agent control"}</b>
+              </div>
+              <div className="kv">
+                <span>Auto-loop agent</span>
+                <b>
+                  <label style={{ cursor: "pointer" }}>
+                    <input
+                      type="checkbox"
+                      checked={autoAgentDemo}
+                      disabled={mode !== "agent"}
+                      onChange={(e) => setAutoAgentDemo(e.target.checked)}
+                      style={{ marginRight: 6 }}
+                    />
+                    {mode === "agent" ? "Enabled" : "Only in agent mode"}
+                  </label>
+                </b>
+              </div>
+              <div className="kv">
+                <span>Episode reward</span>
                 <b>{epR.toFixed(2)}</b>
               </div>
               <div className="kv">
@@ -489,7 +521,7 @@ export default function App() {
                 <span>Session</span>
                 <b>{sid?.slice(0, 8) ?? "-"}</b>
               </div>
-              <div className="help">Controls: A=left, W=main, D=right</div>
+              <div className="help">Controls: A=LEFT, W=MAIN, D=RIGHT</div>
             </div>
           ) : (
             <div className="panel">
@@ -503,10 +535,14 @@ export default function App() {
                 <b>{epRA.toFixed(2)}</b>
               </div>
               <div className="kv">
+                <span>Winner</span>
+                <b>{winner || "-"}</b>
+              </div>
+              <div className="kv">
                 <span>Seed</span>
                 <b>{duelSeed ?? "-"}</b>
               </div>
-              <div className="help">Controls: A=left, W=main, D=right</div>
+              <div className="help">Controls: A=LEFT, W=MAIN, D=RIGHT</div>
             </div>
           )}
         </aside>
