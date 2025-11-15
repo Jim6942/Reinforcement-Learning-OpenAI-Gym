@@ -112,6 +112,9 @@ export default function App() {
   const targetMs = 55;
   const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
+  // Hard cap: minimum frame time in ms (both single + duel)
+  const FRAME_MIN_MS = 36;
+
   useEffect(() => {
     running.current = true;
     const init = async () => {
@@ -136,7 +139,7 @@ export default function App() {
     };
   }, []);
 
-  // SINGLE LOOP – fixed repeat = 1
+  // SINGLE LOOP – fixed repeat = 2 with hard ms cap
   useEffect(() => {
     if (mode === "duel") return;
     if (!sid || done) return;
@@ -157,11 +160,22 @@ export default function App() {
             const { data } = await http.post<StepResp>("/agent_step", { session_id: sid, repeat });
             resp = data;
           }
-          const dt = performance.now() - t0;
-          setLatencyMs(dt);
+
+          const networkMs = performance.now() - t0;
+
+          // Hard cap to avoid super-fast spikes
+          let extraSleep = 0;
+          if (networkMs < FRAME_MIN_MS) {
+            extraSleep = FRAME_MIN_MS - networkMs;
+            await new Promise<void>((r) => setTimeout(r, extraSleep));
+          }
+          const frameMs = networkMs + extraSleep;
+
+          setLatencyMs(networkMs);
           const used = resp.steps ?? repeat;
-          const est = used > 0 && dt > 0 ? Math.round((used * 1000) / dt) : 0;
+          const est = used > 0 && frameMs > 0 ? Math.round((used * 1000) / frameMs) : 0;
           setFps(est);
+
           setImg(resp.frame);
           if (typeof resp.reward === "number") {
             setStepR(resp.reward);
@@ -196,6 +210,7 @@ export default function App() {
             setStatus("Running…");
           }
           const ideal = targetMs;
+          const dt = networkMs;
           if (dt > ideal * 1.25 || dt < ideal * 0.75) {
             // keep clamp "used" but no auto-tuning of repeatRef
             clamp(0, 0, 0);
@@ -232,7 +247,7 @@ export default function App() {
     };
   }, [mode, sid, done, autoAgentDemo]);
 
-  // DUEL LOOP – repeat = 1
+  // DUEL LOOP – repeat = 1 with hard ms cap
   useEffect(() => {
     if (mode !== "duel") return;
     if (!sidH || !sidA) return;
@@ -253,11 +268,21 @@ export default function App() {
             reqs.push(http.post<StepResp>("/agent_step", { session_id: sidA, repeat }));
           }
           const res = await Promise.all(reqs);
-          const dt = performance.now() - t0;
-          setLatencyMs(dt);
+
+          const networkMs = performance.now() - t0;
+
+          let extraSleep = 0;
+          if (networkMs < FRAME_MIN_MS) {
+            extraSleep = FRAME_MIN_MS - networkMs;
+            await new Promise<void>((r) => setTimeout(r, extraSleep));
+          }
+          const frameMs = networkMs + extraSleep;
+
+          setLatencyMs(networkMs);
           const used = repeat;
-          const est = used > 0 && dt > 0 ? Math.round((used * 1000) / dt) : 0;
+          const est = used > 0 && frameMs > 0 ? Math.round((used * 1000) / frameMs) : 0;
           setFps(est);
+
           let i = 0;
           if (!doneH) {
             const { data } = res[i++];
