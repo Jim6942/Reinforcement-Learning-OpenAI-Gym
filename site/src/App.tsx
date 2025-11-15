@@ -260,7 +260,7 @@ export default function App() {
       while (running.current && !cancel && sidH && sidA && !(doneH && doneA)) {
         try {
           const t0 = performance.now();
-          const repeat = 1;
+          const repeat = 2;
           const reqs: Promise<{ data: StepResp }>[] = [];
           if (!doneH) {
             const action = computeAction();
